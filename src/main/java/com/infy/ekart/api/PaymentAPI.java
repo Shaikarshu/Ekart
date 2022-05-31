@@ -1,5 +1,6 @@
 package com.infy.ekart.api;
 
+import java.lang.System.Logger;
 import java.security.NoSuchAlgorithmException;
 import java.util.List;
 
@@ -9,6 +10,7 @@ import javax.validation.constraints.Pattern;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,6 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestTemplate;
 
 import com.infy.ekart.dto.CardDTO;
+import com.infy.ekart.dto.OrderDTO;
+import com.infy.ekart.dto.TransactionDTO;
 import com.infy.ekart.exception.EKartException;
 import com.infy.ekart.service.PaymentService;
 @RestController
@@ -34,11 +38,11 @@ import com.infy.ekart.service.PaymentService;
 @RequestMapping(value = "/payment-api")
 
 public class PaymentAPI {
-
+@Autowired
 	private PaymentService paymentService;
-
+@Autowired
 	private Environment environment;
-
+@Autowired
 	private RestTemplate template;
 
 	private static final Log logger = LogFactory.getLog(PaymentAPI.class);
@@ -53,9 +57,10 @@ public class PaymentAPI {
 	public ResponseEntity<String> addNewCard(@RequestBody CardDTO cardDTO,
 			@Pattern(regexp = "[a-zA-Z0-9._]+@[a-zA-Z]{2,}\\.[a-zA-Z][a-zA-Z.]+", message = "{invalid.email.format}") @PathVariable("customerEmailId") String customerEmailId)
 			throws EKartException, NoSuchAlgorithmException {
-		// write your logic here
-
-		return null;
+		Integer id=paymentService.addCustomerCard(customerEmailId, cardDTO);
+		String message=environment.getProperty("PaymentAPI.NEW_CARD_ADDED_SUCCESS")+id;
+		return new ResponseEntity<>(message,HttpStatus.CREATED);
+		
 	}
 
 	@PutMapping(value = "/update/card")
@@ -79,9 +84,10 @@ public class PaymentAPI {
 			@Pattern(regexp = "[a-zA-Z0-9._]+@[a-zA-Z]{2,}\\.[a-zA-Z][a-zA-Z.]+", message = "{invalid.email.format}") @PathVariable("customerEmailId") String customerEmailId)
 			throws EKartException {
 
-		// write your logic here
-
-		return null;
+	paymentService.deleteCustomerCard(customerEmailId, cardID);
+	String message=environment.getProperty("PaymentAPI.CUSTOMER_CARD_DELETED_SUCCESS ");
+	
+	return new ResponseEntity<>(message,HttpStatus.OK);
 	}
 
 	// Get the customer cards details by calling getCardsOfCustomer()
@@ -90,8 +96,9 @@ public class PaymentAPI {
 	public ResponseEntity<List<CardDTO>> getCardsOfCustomer(@PathVariable String customerEmailId,
 			@PathVariable String cardType) throws EKartException {
 		// write your logic here
-
-		return null;
+    List<CardDTO>card=paymentService.getCardsOfCustomer(customerEmailId, cardType);
+    
+    return new ResponseEntity<>(card,HttpStatus.OK);
 	}
 
 	
@@ -112,8 +119,31 @@ public class PaymentAPI {
 			@Valid @RequestBody CardDTO cardDTO) throws NoSuchAlgorithmException, EKartException {
 
 		// write your logic here
-
-		return null;
+      String url="http://localhost:3333/Ekart/order-api/order/{orderId}";
+      OrderDTO orderDTO=template.getForObject(url,  OrderDTO.class,orderId);
+      TransactionDTO tDTO=new TransactionDTO();
+      tDTO.setCard(cardDTO);
+      logger.info("REceived request for paying for order:"+orderId);
+      String getOrderDetailsUrls="http://localhost:3333/Ekart/order-api/order/{orderId}";
+      ResponseEntity<OrderDTO> orderResponse=template.getForEntity(getOrderDetailsUrls, OrderDTO.class );
+      OrderDTO orderDTO1=orderResponse.getBody();
+      
+      tDTO.setOrder(orderDTO1);
+      tDTO.setTransactionDate(orderDTO1.getDateOfOrder());
+      tDTO.setTotalPrice(orderDTO.getTotalPrice());
+      tDTO=paymentService.authenticatePayment(customerEmailId, tDTO);
+      Integer id=paymentService.addTransaction(tDTO);
+      template.put("http://localhost.3333/Ekart/order-api/order"+tDTO.getOrder().getOrderId()
+    		  +"update/order-status",tDTO.getTransactionStatus().toString());
+      String message=environment.getProperty("PayentAPI.TRANSACTION_SUCCESSFUL_ONE")+tDTO.getTotalPrice()+""
+    		  +environment.getProperty("PaymentAPI.TRANSACTION_SUCCESSFUL_TWO")+
+    		  tDTO.getOrder().getOrderId()+environment.getProperty("PaymentAPI.TRANSACTION_SUCCESSFUL_THREE")+id;
+      return new ResponseEntity<>(message,HttpStatus.OK);
+	
+	}
+      
+      
+		
 	}
 
-}
+
